@@ -81,7 +81,7 @@ reg `OP s0op, s1op, s2op; // Tracks the op in each stage of the pipeline
 wire `OP op; // result of decoder
 wire `REGNAME regdst; // destination register (may be changed by decoder in the future (ie set regdst to 0 for no writing))
 
-decode decoder(op, regdst, s0op)
+decode decoder(op, regdst, ir)
 
 always @(reset) begin
   halt = 0;
@@ -96,7 +96,6 @@ end
 
 /* update with next instruction */
 always @(*) ir = instrmem[pc];
-
 
 endmodule
 
