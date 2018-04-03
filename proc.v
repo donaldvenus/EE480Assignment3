@@ -47,6 +47,36 @@
 
 `define OPnop    5'b11111
 
+
+/* ALU module */
+module alu(result, op, in1, in2);
+output reg `WORD result;
+input wire `OP op;
+input wire `WORD in1, in2;
+
+always @(op, in1, in2) begin
+  case (op)
+    `OPadd: begin result = in1 + in2; end
+    `OPand: begin result = in1 & in2; end
+    `OPmul: begin result = in1 * in2; end
+    `OPor: begin result = in1 | in2; end
+    `OPsll: begin result = in1 << in2; end
+    `OPslt: begin result = in1 < in2; end
+    `OPsra: begin result = $signed(in1) >>> in2; end
+    `OPxor: begin result = in1 ^ in2; end
+    `OPlnot: begin result = ~in1; end
+    `OPneg: begin result = -in1; end
+    `OPleft: begin result = in1; end
+    `OPright: begin result = in1; end
+    `OPgor: begin result = in1; end
+    `OPli8: begin result = in1; end
+    `OPlu8: begin result = in1; end
+    default: begin result = in1; end
+  endcase
+end
+endmodule
+
+
 /* Convert opcode of instruction into unique opcode for pipeline */
 module decode(opout, regdst, ir);
 output reg `OP opout;
@@ -54,15 +84,25 @@ output reg `REGNAME regdst;
 input wire `OP opin;
 input `WORD ir;
 
-/* 
- * May want to use this to insert NOPs or do more for some instructions, but not sure yet... 
+/*
+ * May want to use this to insert NOPs or do more for some instructions, but not sure yet...
  * May also be good to set regdst to 0 if no write is going to occur for the instruction
  */
 always @(ir) begin
 	case (ir `OPCODE)
-		`OPnoarg: begin  opout <= { 1'b1, ir `T }; end
-		`OPtwoarg: begin opout <= { 1'b1, ir `T }; end
-		default: begin opout <= ir `OPCODE; end
+		`OPnoarg: begin
+		  opout <= { 1'b1, ir `T };
+		  regdst <= 0;
+		end
+		`OPtwoarg: begin
+		  if (ir `T == 4'b1011) regdst <= 0;
+		  else regdst <= ir `D;
+		  opout <= { 1'b1, ir `T };
+		end
+		default: begin
+		  opout <= ir `OPCODE;
+		  regdst <= ir `D;
+		end
 	endcase
 end
 endmodule
@@ -76,17 +116,20 @@ reg `WORD instrmem `MEMSIZE;
 reg `WORD datamem `MEMSIZE;
 reg `CALLSIZE callstack = 0;
 reg `ENSIZE enstack = ~0;
-reg `WORD pc, ir;
+reg `WORD pc, ir, newpc;
 reg `OP s0op, s1op, s2op; // Tracks the op in each stage of the pipeline
 wire `OP op; // result of decoder
 wire `REGNAME regdst; // destination register (may be changed by decoder in the future (ie set regdst to 0 for no writing))
+reg `REGNAME s0regdst, s1regdst, s2regdst, s0s, s0d, s0t;
+reg `WORD s1sval, s1dval, s1tval, s2val, sval, dval, tval;
+wire `WORD res;
 
-decode decoder(op, regdst, ir)
+decode decoder(op, regdst, ir);
+alu myalu(res, s1op, s1sval, s1tval);
 
 always @(reset) begin
   halt = 0;
   pc = 0;
-  s = `Start;
   s0op = `OPnop;
   s1op = `OPnop;
   s2op = `OPnop;
@@ -96,6 +139,101 @@ end
 
 /* update with next instruction */
 always @(*) ir = instrmem[pc];
+
+/* Get new PC value */
+always @(*) begin
+  newpc = pc + 1;
+  $display(datamem[1]);
+  $display("u1: %d", regfile[7]);
+  $display("u2: %d", regfile[8]);
+  $display("u3: %d", regfile[9]);
+  $display("u4: %d", regfile[10]);
+end
+
+// compute srcval, with value forwarding... also from 2nd word of li
+//always @(*) sval = ((s1regdst && (s0s == s1regdst)) ? 10 :
+//                           ((s2regdst && (s0s == s2regdst)) ? 20 :
+//                            regfile[s0s]));
+
+// compute dstval, with value forwarding
+//always @(*) dval = ((s1regdst && (s0d == s1regdst)) ? 10 :
+//                      ((s2regdst && (s0d == s2regdst)) ? 20 :
+//                       regfile[s0d]));
+                       
+//always @(*) tval = ((s1regdst && (s0t == s1regdst)) ? 10 :
+//                      ((s2regdst && (s0t == s2regdst)) ? 20 :
+//                       regfile[s0t]));
+                       
+
+/* Stage 0 */
+always @(posedge clk) if (!halt) begin
+  s0op <= op;
+  s0regdst <= regdst;
+  s0s <= ir `S;
+  s0d <= ir `D;
+  s0t <= ir `T;
+  pc <= newpc;
+end
+
+/* Stage 1 */
+always @(posedge clk) if (!halt) begin
+  s1op <= s0op;
+  if (s0op == `OPli8) begin
+    s1sval <= {{8{s0s[3]}}, s0s, s0t};
+  end else if (s0op == `OPlu8) begin
+    s1sval <= {s0s, s0t, regfile[s0d][7:0]};
+  end else begin
+    s1sval <= regfile[s0s];
+  end
+  s1tval <= regfile[s0t];
+  s1dval <= regfile[s0d];
+  s1regdst <= s0regdst;
+  /*
+  $display("Stage 0:");
+  $display("s0op: %d", s0op);
+  $display("s0s: %d", s0s);
+  $display("s0d: %d", s0d);
+  $display("s0t: %d", s0t);
+  $display("pc: %d", pc);
+  */
+end
+
+/* Stage 2 */
+always @(posedge clk) if (!halt) begin
+    s2op <= s1op;
+    s2val <= ((s1op == `OPload) ? datamem[s1sval] : res);
+    if (s1op == `OPallen) enstack <= {enstack[31:1], 1'b1};
+    if (s1op == `OPpushen) enstack <= {enstack[30:0], enstack[0]};
+    if (s1op == `OPpopen) enstack <= {enstack[31], enstack[31:1]};
+  if (enstack[0] == 1) begin
+    // Enabled
+    if (s1op == `OPstore) datamem[s1sval] <= s1dval;
+    if (s1op == `OPtrap) halt <= 1;
+    s2regdst <= s1regdst;
+  end else begin
+    // Disabled
+    s2regdst <= 0;
+  end
+  /*
+  $display("Stage 1:");
+  $display("s1op: %d", s1op);
+  $display("s1regdst: %d", s1regdst);
+  $display("s1sval: %d", s1sval);
+  $display("s1dval: %d", s1dval);
+  $display("s1tval: %d", s1tval);
+  */
+end
+
+/* Stage 3 */
+always @(posedge clk) if (!halt) begin
+  if (s2regdst != 0) regfile[s2regdst] <= s2val;
+  /*
+  $display("Stage 2:");
+  $display("s2op: %d", s2op);
+  $display("s2regdst: %d", s2regdst);
+  $display("s2val: %d", s2val);
+  */
+end
 
 endmodule
 
