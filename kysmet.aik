@@ -7,7 +7,7 @@
 .alias .THREEARG 1 add and mul or sll slt sra xor
 
 li8 $.d, .i8 := 9:4 .d:4 .i8:8
-lu8 $.d, i8 := 10:4 .d:4 .i8:8
+lu8 $.d, .i8 := 10:4 .d:4 .i8:8
 
 li $.d, .i16 ?(.i16 <= 127 && .i16 >= -128) := 9:4 .d:4 .i16:8
 li $.d, .i16 := 9:4 .d:4 (.i16 & 0xff):8 10:4 .d:4 (.i16 >> 8):8
