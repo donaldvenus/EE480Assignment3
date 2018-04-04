@@ -133,6 +133,11 @@ always @(reset) begin
   s0op = `OPnop;
   s1op = `OPnop;
   s2op = `OPnop;
+  s1regdst = 0;
+  s2regdst = 0;
+  s0s = 0;
+  s0d = 0;
+  s0t = 0;
   $readmemh0(regfile);
   $readmemh1(instrmem);
 end
@@ -150,19 +155,26 @@ always @(*) begin
   $display("u4: %d", regfile[10]);
 end
 
-// compute srcval, with value forwarding... also from 2nd word of li
-//always @(*) sval = ((s1regdst && (s0s == s1regdst)) ? 10 :
-//                           ((s2regdst && (s0s == s2regdst)) ? 20 :
-//                            regfile[s0s]));
+// compute sval with value forwarding
+always @(*) begin
+  if (s1regdst != 0 && (s0s == s1regdst)) sval = res;
+  else if (s2regdst != 0 && (s0s == s2regdst)) sval = s2val;
+  else sval = regfile[s0s];
+end
 
-// compute dstval, with value forwarding
-//always @(*) dval = ((s1regdst && (s0d == s1regdst)) ? 10 :
-//                      ((s2regdst && (s0d == s2regdst)) ? 20 :
-//                       regfile[s0d]));
-                       
-//always @(*) tval = ((s1regdst && (s0t == s1regdst)) ? 10 :
-//                      ((s2regdst && (s0t == s2regdst)) ? 20 :
-//                       regfile[s0t]));
+// compute dval with value forwarding
+always @(*) begin
+  if (s1regdst != 0 && (s0d == s1regdst)) dval = res;
+  else if (s2regdst != 0 && (s0d == s2regdst)) dval = s2val;
+  else dval = regfile[s0d];
+end
+
+// compute tval with value forwarding
+always @(*) begin
+  if (s1regdst != 0 && (s0t == s1regdst)) tval = res;
+  else if (s2regdst != 0 && (s0t == s2regdst)) tval = s2val;
+  else tval = regfile[s0t];
+end
                        
 
 /* Stage 0 */
@@ -183,10 +195,10 @@ always @(posedge clk) if (!halt) begin
   end else if (s0op == `OPlu8) begin
     s1sval <= {s0s, s0t, regfile[s0d][7:0]};
   end else begin
-    s1sval <= regfile[s0s];
+    s1sval <= sval;
   end
-  s1tval <= regfile[s0t];
-  s1dval <= regfile[s0d];
+  s1tval <= tval;
+  s1dval <= dval;
   s1regdst <= s0regdst;
   /*
   $display("Stage 0:");
