@@ -123,6 +123,7 @@ reg `WORD regfile `REGSIZE;
 reg `WORD instrmem `MEMSIZE;
 reg `WORD datamem `MEMSIZE;
 reg `CALLSIZE callstack = 0;
+reg `CALLSIZE callstackcopy = 0;
 reg `ENSIZE enstack = ~0;
 reg `WORD pc, ir, newpc;
 reg `OP s0op, s1op, s2op; // Tracks the op in each stage of the pipeline
@@ -155,10 +156,10 @@ always @(*) ir = instrmem[pc];
 
 /* Get new PC value */
 always @(*) begin
-  if (op == `OPaddr && s0op != `OPjumpf) newpc <= addr;
-  else if (op == `OPaddr && s0op == `OPjumpf && dval == 0) newpc <= addr;
-  else if (op == `OPret) newpc <= callstack[15:0] + 2;
-  else newpc <= pc + 1;
+  if (op == `OPaddr && s0op != `OPjumpf) newpc = addr;
+  else if (op == `OPaddr && s0op == `OPjumpf && dval == 0) newpc = addr;
+  else if (op == `OPret) newpc = callstack[15:0] + 2;
+  else newpc = pc + 1;
 end
 
 always @(posedge clk) begin
@@ -194,12 +195,13 @@ end
 
 // compute current jump address
 always @(*) begin
-  addr <= {ir `S, ir `T, s0s, s0t};
+  addr = {ir `S, ir `T, s0s, s0t};
 end
 
 always @(*) begin
-  if (op == `OPcall) callstack <= { callstack[47:0], pc };
-  if (op == `OPret) callstack <= callstack >> 16;
+  	callstackcopy = callstack;
+	if (op == `OPcall) callstack = { callstackcopy[47:0], pc };
+	if (op == `OPret) callstack = callstackcopy >> 16;
 end
 
 /* Stage 0 */
