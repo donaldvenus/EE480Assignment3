@@ -90,6 +90,10 @@ input `WORD ir;
  */
 always @(ir) begin
 	case (ir `OPCODE)
+    `OPjumpf: begin
+      opout <= ir `OPCODE;
+      regdst <= 0;
+    end
     `OPcall: begin
       opout <= ir `OPCODE;
       regdst <= 0;
@@ -160,9 +164,6 @@ always @(*) begin
   else if (op == `OPaddr && s0op == `OPjumpf && dval == 0) newpc = addr;
   else if (op == `OPret) newpc = callstack[15:0] + 2;
   else newpc = pc + 1;
-end
-
-always @(posedge clk) begin
   $display(datamem[1]);
   $display("call: %d", callstack[15:0]);
   $display("pc: %d", pc);
@@ -198,7 +199,7 @@ always @(*) begin
   addr = {ir `S, ir `T, s0s, s0t};
 end
 
-always @(*) begin
+always @(posedge clk) begin
   	callstackcopy = callstack;
 	if (op == `OPcall) callstack = { callstackcopy[47:0], pc };
 	if (op == `OPret) callstack = callstackcopy >> 16;
