@@ -15,7 +15,7 @@ li $.d, .i16 := 9:4 .d:4 (.i16 & 0xff):8 10:4 .d:4 (.i16 >> 8):8
 .TWOARG $.d, $.s := 11:4 .d:4 .s:4 .this:4
 .alias .TWOARG 5 gor left lnot load neg right store
 
-call .addr := 12:4 0:12 .addr:16
+call .addr := 12:4 0:4 (.addr & 0xff):8 15:4 0:4 (.addr >> 8):8
 jump .addr := 13:4 0:4 (.addr & 0xff):8 15:4 0:4 (.addr >> 8):8
 jumpf $.d, .addr := 14:4 .d:4 0:8 .addr:16
 

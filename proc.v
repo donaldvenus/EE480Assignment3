@@ -90,6 +90,10 @@ input `WORD ir;
  */
 always @(ir) begin
 	case (ir `OPCODE)
+    `OPcall: begin
+      opout <= ir `D;
+      regdst <= 0;
+    end
     `OPjump: begin
       opout <= ir `D;
       regdst <= 0;
@@ -151,7 +155,8 @@ always @(*) ir = instrmem[pc];
 
 /* Get new PC value */
 always @(*) begin
-  if (op == `OPaddr) newpc <= addr;
+  if (op == `OPaddr && s0op != `OPjumpf) newpc <= addr;
+  else if (op == `OPret) newpc <= callstack[15:0] + 2;
   else newpc = pc + 1;
   $display(datamem[1]);
   $display("u1: %d", regfile[7]);
@@ -185,7 +190,12 @@ end
 always @(*) begin
   addr <= {ir `S, ir `T, s0s, s0t};
 end
-                       
+                  
+// push to call stack
+always @(*) begin
+  if (op == `OPcall) callstack <= { callstack[47:0], pc };
+  if (op == `OPret) callstack <= callstack >> 16;
+end     
 
 /* Stage 0 */
 always @(posedge clk) if (!halt) begin
@@ -199,7 +209,7 @@ end
 
 /* Stage 1 */
 always @(posedge clk) if (!halt) begin
-  if (s0op != `OPjump && s0op != `OPaddr) s1op <= s0op;
+  if (s0op != `OPjump && s0op != `OPaddr && s0op != `OPcall && s0op != `OPret) s1op <= s0op;
   else s1op <= `OPnop;
   if (s0op == `OPli8) begin
     s1sval <= {{8{s0s[3]}}, s0s, s0t};
