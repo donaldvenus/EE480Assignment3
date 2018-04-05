@@ -90,6 +90,10 @@ input `WORD ir;
  */
 always @(ir) begin
 	case (ir `OPCODE)
+    `OPjump: begin
+      opout <= ir `D;
+      regdst <= 0;
+    end
 		`OPnoarg: begin
 		  opout <= { 1'b1, ir `T };
 		  regdst <= 0;
@@ -121,7 +125,7 @@ reg `OP s0op, s1op, s2op; // Tracks the op in each stage of the pipeline
 wire `OP op; // result of decoder
 wire `REGNAME regdst; // destination register (may be changed by decoder in the future (ie set regdst to 0 for no writing))
 reg `REGNAME s0regdst, s1regdst, s2regdst, s0s, s0d, s0t;
-reg `WORD s1sval, s1dval, s1tval, s2val, sval, dval, tval;
+reg `WORD s1sval, s1dval, s1tval, s2val, sval, dval, tval, addr;
 wire `WORD res;
 
 decode decoder(op, regdst, ir);
@@ -147,7 +151,8 @@ always @(*) ir = instrmem[pc];
 
 /* Get new PC value */
 always @(*) begin
-  newpc = pc + 1;
+  if (op == `OPaddr) newpc <= addr;
+  else newpc = pc + 1;
   $display(datamem[1]);
   $display("u1: %d", regfile[7]);
   $display("u2: %d", regfile[8]);
@@ -175,6 +180,11 @@ always @(*) begin
   else if (s2regdst != 0 && (s0t == s2regdst)) tval = s2val;
   else tval = regfile[s0t];
 end
+
+// compute current jump address
+always @(*) begin
+  addr <= {ir `S, ir `T, s0s, s0t};
+end
                        
 
 /* Stage 0 */
@@ -189,7 +199,8 @@ end
 
 /* Stage 1 */
 always @(posedge clk) if (!halt) begin
-  s1op <= s0op;
+  if (s0op != `OPjump && s0op != `OPaddr) s1op <= s0op;
+  else s1op <= `OPnop;
   if (s0op == `OPli8) begin
     s1sval <= {{8{s0s[3]}}, s0s, s0t};
   end else if (s0op == `OPlu8) begin
@@ -212,11 +223,11 @@ end
 
 /* Stage 2 */
 always @(posedge clk) if (!halt) begin
-    s2op <= s1op;
-    s2val <= ((s1op == `OPload) ? datamem[s1sval] : res);
-    if (s1op == `OPallen) enstack <= {enstack[31:1], 1'b1};
-    if (s1op == `OPpushen) enstack <= {enstack[30:0], enstack[0]};
-    if (s1op == `OPpopen) enstack <= {enstack[31], enstack[31:1]};
+  s2op <= s1op;
+  s2val <= ((s1op == `OPload) ? datamem[s1sval] : res);
+  if (s1op == `OPallen) enstack <= {enstack[31:1], 1'b1};
+  if (s1op == `OPpushen) enstack <= {enstack[30:0], enstack[0]};
+  if (s1op == `OPpopen) enstack <= {enstack[31], enstack[31:1]};
   if (enstack[0] == 1) begin
     // Enabled
     if (s1op == `OPstore) datamem[s1sval] <= s1dval;
