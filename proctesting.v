@@ -91,11 +91,11 @@ input `WORD ir;
 always @(ir) begin
 	case (ir `OPCODE)
     `OPcall: begin
-      opout <= ir `D;
+      opout <= ir `OPCODE;
       regdst <= 0;
     end
     `OPjump: begin
-      opout <= ir `D;
+      opout <= ir `OPCODE;
       regdst <= 0;
     end
 		`OPnoarg: begin
@@ -155,8 +155,6 @@ always @(*) ir = instrmem[pc];
 
 /* Get new PC value */
 always @(*) begin
-  if (op == `OPcall) callstack <= pc + 2;
-  if (op == `OPret) callstack <= callstack >> 16;
   if (op == `OPaddr && s0op != `OPjumpf) newpc <= addr;
   else if (op == `OPaddr && s0op == `OPjumpf && dval == 0) newpc <= addr;
   else if (op == `OPret) newpc <= callstack[15:0] + 2;
@@ -197,6 +195,11 @@ end
 // compute current jump address
 always @(*) begin
   addr <= {ir `S, ir `T, s0s, s0t};
+end
+
+always @(*) begin
+  if (op == `OPcall) callstack <= { callstack[47:0], pc };
+  if (op == `OPret) callstack <= callstack >> 16;
 end
 
 /* Stage 0 */
