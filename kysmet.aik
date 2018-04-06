@@ -1,22 +1,33 @@
+; Set to low first so two word generating commands such as call/jump/jumpf will generate in the correct order
 .lowfirst = 0
 
+; Noarg commands all share an op code, d and s 0, t as extended op identifier
 .NOARG := 0:4 0:8 .this:4
 .alias .NOARG trap ret allen popen pushen
 
+; Three args use standard op d s t encoding
 .THREEARG $.d, $.s, $.t := .this:4 .d:4 .s:4 .t:4
 .alias .THREEARG 1 add and mul or sll slt sra xor
 
+; Li8/lu8 have unique ops, immediate in s and t
 li8 $.d, .i8 := 9:4 .d:4 .i8:8
 lu8 $.d, .i8 := 10:4 .d:4 .i8:8
 
+; Pseudo op li generates just lu8 or lu8 followed by li8 if needed
 li $.d, .i16 ?(.i16 <= 127 && .i16 >= -128) := 9:4 .d:4 .i16:8
+; Math inside here keeps lower 8 bits for li, then shifts top 8 into first 8s place for lu
+; First and may not be needed but it doesnt break anything
 li $.d, .i16 := 9:4 .d:4 (.i16 & 0xff):8 10:4 .d:4 (.i16 >> 8):8
 
+; All two args share an op code, use t as extended op
 .TWOARG $.d, $.s := 11:4 .d:4 .s:4 .this:4
 .alias .TWOARG 5 gor left lnot load neg right store
 
+; Call jump and jumpf first load the bottom 8 bits with the instruction
+; They then generate an unnamed instruction that indicates this command holds the other half
 call .addr := 12:4 0:4 (.addr & 0xff):8 15:4 0:4 (.addr >> 8):8
 jump .addr := 13:4 0:4 (.addr & 0xff):8 15:4 0:4 (.addr >> 8):8
 jumpf $.d, .addr := 14:4 .d:4 (.addr & 0xff):8 15:4 0:4 (.addr >> 8):8
 
+; Assign names to registers 0 - 15
 .const {zero IPROC NPROC sp fp rv u0 u1 u2 u3 u4 u5 u6 u7 u8 u9}
