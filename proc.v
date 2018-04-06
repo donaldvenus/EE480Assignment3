@@ -66,9 +66,11 @@ always @(op, in1, in2) begin
     `OPxor: begin result = in1 ^ in2; end
     `OPlnot: begin result = ~in1; end
     `OPneg: begin result = -in1; end
+    // left, right, gor, all just function as copies right now, will need changed in next assignment
     `OPleft: begin result = in1; end
     `OPright: begin result = in1; end
     `OPgor: begin result = in1; end
+    // Take advantage of existing hardware by passing immediate values through the ALU when loading
     `OPli8: begin result = in1; end
     `OPlu8: begin result = in1; end
     default: begin result = in1; end
@@ -81,11 +83,12 @@ endmodule
 module decode(opout, regdst, ir);
 output reg `OP opout;
 output reg `REGNAME regdst;
-input wire `OP opin;
 input `WORD ir;
 
 always @(ir) begin
   case (ir `OPCODE)
+    // Each of these cases tries to do no harm by causing no write to occur if command doesnt store
+    // For some the 5 bit op is the same as the 4 bit opcode with a 0 on top bit, others need 1 appended to top
     `OPaddr: begin
       opout <= ir `OPCODE;
       regdst <= 0;
@@ -107,10 +110,12 @@ always @(ir) begin
       regdst <= 0;
     end
     `OPtwoarg: begin
+      // This command handles store, couldn't get opcode reference to work right so used constant
       if (ir `T == 4'b1011) regdst <= 0;
       else regdst <= ir `D;
       opout <= { 1'b1, ir `T };
     end
+    // For not explicitly covered cases like threeargs just pull the opcode and destination
     default: begin
       opout <= ir `OPCODE;
       regdst <= ir `D;
@@ -168,6 +173,7 @@ end
 always @(*) begin
   if (op == `OPaddr && s0op != `OPjumpf) newpc = addr;
   else if (op == `OPaddr && s0op == `OPjumpf && dval == 0) newpc = addr;
+  // Add two to ensure call sends pc to right place
   else if (op == `OPret) newpc = callstack[15:0] + 2;
   else newpc = pc + 1;
 end
@@ -200,6 +206,7 @@ end
 
 // handle callstack
 always @(posedge clk) begin
+  // This can be optimized, shouldn't need a copy reg, just don't update unless opcall or opret
   callstackcopy = callstack;
   if (op == `OPcall) callstack = { callstackcopy[47:0], pc };
   if (op == `OPret) callstack = callstackcopy >> 16;
@@ -244,7 +251,7 @@ always @(posedge clk) if (!halt) begin
     if (s1op == `OPtrap) halt <= 1;
     s2regdst <= s1regdst;
   end else begin
-    // Disabled
+    // Disabled, don't store anything to registers or memory, don't halt if disabled
     s2regdst <= 0;
   end
 end
