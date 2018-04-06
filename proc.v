@@ -170,18 +170,6 @@ always @(*) begin
   else if (op == `OPaddr && s0op == `OPjumpf && dval == 0) newpc = addr;
   else if (op == `OPret) newpc = callstack[15:0] + 2;
   else newpc = pc + 1;
-  $display("call: %d", callstack[15:0]);
-  $display("regdst: %d", regdst);
-  $display("s0regdst: %d", s0regdst);
-  $display("s1regdst: %d", s1regdst);
-  $display("s2regdst: %d", s2regdst);
-  $display("s2val: %d", s2val);
-  $display("pc: %d", pc);
-  $display("u0: %d", regfile[6]);
-  $display("u1: %d", regfile[7]);
-  $display("u2: %d", regfile[8]);
-  $display("u3: %d", regfile[9]);
-  $display("u4: %d", regfile[10]);
 end
 
 // compute sval with value forwarding
