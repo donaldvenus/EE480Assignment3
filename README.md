@@ -2,9 +2,7 @@
 
 Assignment 3 for EE 480 - Pipelined processor design
 
-proc.v contains the in-process processor
-
-pipe_example.v contains Dr. Dietz's example pipelined processor shown in class
+proc.v contains the completed pipelined KySMET processor design
 
 kysmet.aik contains the aik specification for this processor
 
