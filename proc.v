@@ -84,37 +84,42 @@ output reg `REGNAME regdst;
 input wire `OP opin;
 input `WORD ir;
 
-/*
- * May want to use this to insert NOPs or do more for some instructions, but not sure yet...
- * May also be good to set regdst to 0 if no write is going to occur for the instruction
- */
 always @(ir) begin
-	case (ir `OPCODE)
+  case (ir `OPCODE)
+    `OPaddr: begin
+      opout <= ir `OPCODE;
+      regdst <= 0;
+    end
+    `OPjumpf: begin
+      opout <= ir `OPCODE;
+      regdst <= 0;
+    end
     `OPcall: begin
-      opout <= ir `D;
+      opout <= ir `OPCODE;
       regdst <= 0;
     end
     `OPjump: begin
-      opout <= ir `D;
+      opout <= ir `OPCODE;
       regdst <= 0;
     end
-		`OPnoarg: begin
-		  opout <= { 1'b1, ir `T };
-		  regdst <= 0;
-		end
-		`OPtwoarg: begin
-		  if (ir `T == 4'b1011) regdst <= 0;
-		  else regdst <= ir `D;
-		  opout <= { 1'b1, ir `T };
-		end
-		default: begin
-		  opout <= ir `OPCODE;
-		  regdst <= ir `D;
-		end
-	endcase
+    `OPnoarg: begin
+      opout <= { 1'b1, ir `T };
+      regdst <= 0;
+    end
+    `OPtwoarg: begin
+      if (ir `T == 4'b1011) regdst <= 0;
+      else regdst <= ir `D;
+      opout <= { 1'b1, ir `T };
+    end
+    default: begin
+      opout <= ir `OPCODE;
+      regdst <= ir `D;
+    end
+  endcase
 end
 endmodule
 
+/* Main processor module */
 module processor(halt, reset, clk);
 output reg halt;
 input reset, clk;
@@ -123,17 +128,17 @@ reg `WORD regfile `REGSIZE;
 reg `WORD instrmem `MEMSIZE;
 reg `WORD datamem `MEMSIZE;
 reg `CALLSIZE callstack = 0;
+reg `CALLSIZE callstackcopy = 0;
 reg `ENSIZE enstack = ~0;
-reg `WORD pc, ir, newpc;
-reg `OP s0op, s1op, s2op; // Tracks the op in each stage of the pipeline
-wire `OP op; // result of decoder
-wire `REGNAME regdst; // destination register (may be changed by decoder in the future (ie set regdst to 0 for no writing))
+reg `WORD pc, ir, newpc, s1sval, s1dval, s1tval, s2val, sval, dval, tval, addr, res;
+reg `OP s0op, s1op, s2op;
+wire `OP op;
+wire `REGNAME regdst;
 reg `REGNAME s0regdst, s1regdst, s2regdst, s0s, s0d, s0t;
-reg `WORD s1sval, s1dval, s1tval, s2val, sval, dval, tval, addr;
-wire `WORD res;
+wire `WORD alures;
 
 decode decoder(op, regdst, ir);
-alu myalu(res, s1op, s1sval, s1tval);
+alu myalu(alures, s1op, s1sval, s1tval);
 
 always @(reset) begin
   halt = 0;
@@ -153,12 +158,26 @@ end
 /* update with next instruction */
 always @(*) ir = instrmem[pc];
 
+/* determine which result to save into a register */
+always @(*) begin
+  if (s1op == `OPload) res = datamem[s1sval];
+  else res = alures;
+end
+
 /* Get new PC value */
 always @(*) begin
-  if (op == `OPaddr && s0op != `OPjumpf) newpc <= addr;
-  else if (op == `OPret) newpc <= callstack[15:0] + 2;
+  if (op == `OPaddr && s0op != `OPjumpf) newpc = addr;
+  else if (op == `OPaddr && s0op == `OPjumpf && dval == 0) newpc = addr;
+  else if (op == `OPret) newpc = callstack[15:0] + 2;
   else newpc = pc + 1;
-  $display(datamem[1]);
+  $display("call: %d", callstack[15:0]);
+  $display("regdst: %d", regdst);
+  $display("s0regdst: %d", s0regdst);
+  $display("s1regdst: %d", s1regdst);
+  $display("s2regdst: %d", s2regdst);
+  $display("s2val: %d", s2val);
+  $display("pc: %d", pc);
+  $display("u0: %d", regfile[6]);
   $display("u1: %d", regfile[7]);
   $display("u2: %d", regfile[8]);
   $display("u3: %d", regfile[9]);
@@ -188,16 +207,17 @@ end
 
 // compute current jump address
 always @(*) begin
-  addr <= {ir `S, ir `T, s0s, s0t};
+  addr = {ir `S, ir `T, s0s, s0t};
 end
-                  
-// push to call stack
-always @(*) begin
-  if (op == `OPcall) callstack <= { callstack[47:0], pc };
-  if (op == `OPret) callstack <= callstack >> 16;
-end     
 
-/* Stage 0 */
+// handle callstack
+always @(posedge clk) begin
+  callstackcopy = callstack;
+  if (op == `OPcall) callstack = { callstackcopy[47:0], pc };
+  if (op == `OPret) callstack = callstackcopy >> 16;
+end
+
+/* Stage 0 - Instruction fetch and decode */
 always @(posedge clk) if (!halt) begin
   s0op <= op;
   s0regdst <= regdst;
@@ -207,34 +227,26 @@ always @(posedge clk) if (!halt) begin
   pc <= newpc;
 end
 
-/* Stage 1 */
+/* Stage 1 - Register read */
 always @(posedge clk) if (!halt) begin
-  if (s0op != `OPjump && s0op != `OPaddr && s0op != `OPcall && s0op != `OPret) s1op <= s0op;
-  else s1op <= `OPnop;
   if (s0op == `OPli8) begin
     s1sval <= {{8{s0s[3]}}, s0s, s0t};
   end else if (s0op == `OPlu8) begin
-    s1sval <= {s0s, s0t, regfile[s0d][7:0]};
+    s1sval <= {s0s, s0t, dval[7:0]};
   end else begin
     s1sval <= sval;
   end
+  s1op <= s0op;
   s1tval <= tval;
   s1dval <= dval;
   s1regdst <= s0regdst;
-  /*
-  $display("Stage 0:");
-  $display("s0op: %d", s0op);
-  $display("s0s: %d", s0s);
-  $display("s0d: %d", s0d);
-  $display("s0t: %d", s0t);
-  $display("pc: %d", pc);
-  */
 end
 
-/* Stage 2 */
+/* Stage 2 -  ALU, memory, and enable stack handling */
 always @(posedge clk) if (!halt) begin
   s2op <= s1op;
-  s2val <= ((s1op == `OPload) ? datamem[s1sval] : res);
+  s2val <= res;
+  if (s1op == `OPjumpf && s1dval == 0) enstack <= enstack & ~1;
   if (s1op == `OPallen) enstack <= {enstack[31:1], 1'b1};
   if (s1op == `OPpushen) enstack <= {enstack[30:0], enstack[0]};
   if (s1op == `OPpopen) enstack <= {enstack[31], enstack[31:1]};
@@ -247,25 +259,11 @@ always @(posedge clk) if (!halt) begin
     // Disabled
     s2regdst <= 0;
   end
-  /*
-  $display("Stage 1:");
-  $display("s1op: %d", s1op);
-  $display("s1regdst: %d", s1regdst);
-  $display("s1sval: %d", s1sval);
-  $display("s1dval: %d", s1dval);
-  $display("s1tval: %d", s1tval);
-  */
 end
 
-/* Stage 3 */
+/* Stage 3 - Register write */
 always @(posedge clk) if (!halt) begin
   if (s2regdst != 0) regfile[s2regdst] <= s2val;
-  /*
-  $display("Stage 2:");
-  $display("s2op: %d", s2op);
-  $display("s2regdst: %d", s2regdst);
-  $display("s2val: %d", s2val);
-  */
 end
 
 endmodule

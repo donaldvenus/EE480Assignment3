@@ -170,7 +170,7 @@ testloadstore:
 	trap
 success:
 	allen
-	mul $u0,$u1,$u2
+	li $u0, 1001
 	trap
 
 calla:
